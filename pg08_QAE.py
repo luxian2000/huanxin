@@ -9,9 +9,29 @@ import pennylane as qml
 torch.manual_seed(42)
 np.random.seed(42)
 
+def load_data(data_path="CSI_channel_30km.npy"):
+    """安全地加载数据文件或生成模拟数据"""
+    possible_paths = [
+        data_path,
+        f"./{data_path}",
+        f"../DataSpace/csi_cmri/{data_path}",
+        f"../../DataSpace/csi_cmri/{data_path}",
+    ]
+    
+    for path in possible_paths:
+        if os.path.exists(path):
+            print(f"Loading data from: {path}")
+            return np.load(path)
+    
+    # 如果没有找到数据文件，则创建模拟数据
+    print("Data file not found. Creating simulated CSI data...")
+    # 创建模拟的CSI数据 (80000, 2560)
+    simulated_data = np.random.randn(80000, 2560).astype(np.float32)
+    print(f"Generated simulated data with shape: {simulated_data.shape}")
+    return simulated_data
+
 # Data loading
-DATA_PATH = "../DataSpace/csi_cmri/CSI_channel_30km.npy"
-data_30 = np.load(DATA_PATH)  # shape=(80000, 2560)
+data_30 = load_data()  # shape=(80000, 2560)
 
 # Dataset split
 TOTAL_SAMPLES = data_30.shape[0]
@@ -57,7 +77,7 @@ def sigmoid(x):
     return 1 / (1 + torch.exp(-x))
 
 
-def normlize(x):
+def normalize(x):
     norm = torch.norm(x)
     if norm == 0:
         return x
@@ -69,7 +89,7 @@ def dense_layer(x):
         x = torch.from_numpy(x).float()
     output = torch.matmul(x, WEIGHT) + BIAS
     output = sigmoid(output)
-    output = normlize(output[0])
+    output = normalize(output[0])
     return output
 
 
@@ -98,12 +118,14 @@ def qae_circuit(img_params, enc_params, dec_params):
     com_params = dense_layer(img_params)
     com_params_padded = pad_to_qubits(com_params, DATA_QUBITS)
 
-    qml.AmplitudeEmbedding(com_params_padded, wires=range(DATA_QUBITS), pad_with=0.0, normalize=True)
+    qml.AmplitudeEmbedding(com_params_padded.detach().numpy() if isinstance(com_params_padded, torch.Tensor) else com_params_padded, 
+                          wires=range(DATA_QUBITS), pad_with=0.0, normalize=True)
     qml.StronglyEntanglingLayers(weights=enc_params, wires=range(DATA_QUBITS))
     qml.StronglyEntanglingLayers(weights=dec_params, wires=range(DATA_QUBITS))
 
     # Fidelity with the input state: use Projector to |0...0>
-    qml.adjoint(qml.AmplitudeEmbedding)(com_params_padded, wires=range(DATA_QUBITS), pad_with=0.0, normalize=True)
+    qml.adjoint(qml.AmplitudeEmbedding)(com_params_padded.detach().numpy() if isinstance(com_params_padded, torch.Tensor) else com_params_padded, 
+                                       wires=range(DATA_QUBITS), pad_with=0.0, normalize=True)
     return qml.expval(qml.Projector([0]*DATA_QUBITS, wires=range(DATA_QUBITS)))
 
 
@@ -114,7 +136,7 @@ def process_batch(img_batch, enc_params, dec_params):
         if isinstance(img_params, np.ndarray):
             img_params = torch.from_numpy(img_params).float()
         # 用 .detach() 避免多次反向传播
-        fid = qae_circuit(img_params, enc_params, dec_params).detach()
+        fid = qae_circuit(img_params, enc_params, dec_params)  # 移除 .detach()
         fidelities.append(fid)
     return torch.stack(fidelities)
 
@@ -172,24 +194,25 @@ def train_batch_version():
             for i in range(0, n_samples, batch_size):
                 batch = samples[i : i + batch_size]
 
-                def closure():
-                    opt.zero_grad()
-                    # 只对当前 batch 的每个样本分别前向，loss 只反向一次
-                    fidelities = []
-                    for img_params in batch:
-                        if isinstance(img_params, np.ndarray):
-                            img_params = torch.from_numpy(img_params).float()
-                        fid = qae_circuit(img_params, enc_params, dec_params)
-                        fidelities.append(fid)
-                    fidelities = torch.stack(fidelities)
-                    loss = 1.0 - torch.mean(fidelities)
-                    loss.backward()
-                    return loss
+                # 直接计算梯度而不是使用闭包
+                opt.zero_grad()
+                fidelities = []
+                for img_params in batch:
+                    if isinstance(img_params, np.ndarray):
+                        img_params = torch.from_numpy(img_params).float()
+                    fid = qae_circuit(img_params, enc_params, dec_params)
+                    fidelities.append(fid)
+                fidelities = torch.stack(fidelities)
+                loss = 1.0 - torch.mean(fidelities)
+                loss.backward()
 
                 pre_enc = enc_params.clone().detach()
                 pre_dec = dec_params.clone().detach()
-                loss = opt.step(closure)
-                current_loss = loss.item() if hasattr(loss, "item") else float(loss)
+                
+                # 更新参数
+                opt.step()
+                
+                current_loss = loss.item()
                 epoch_loss += current_loss
                 batch_count += 1
 
