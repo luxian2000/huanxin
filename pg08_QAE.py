@@ -847,15 +847,13 @@ if __name__ == "__main__":
     
     if os.path.exists(latest_encoder_path) and os.path.exists(latest_decoder_path):
         print("检测到已有的训练权重，将使用训练集新样本继续训练...")
-        weights, history = continue_training_with_new_samples(starting_epoch=120, additional_epochs=20, use_random_samples=True)
+        weights, history = continue_training_with_new_samples(starting_epoch=140, additional_epochs=20, use_random_samples=True)
     else:
         print("未检测到已有的训练权重，将从头开始训练...")
         weights, history = train_batch_version_extended()
         
     if weights is not None:
         test_trained_model(weights)
-        print("\nSaved files in 'model_parameters' directory:")
-        for file in sorted(os.listdir("model_parameters")):
-            print(f"  - {file}")
+        print("\n模型训练完成，参数已保存到 'model_parameters' 目录")
     else:
         print("Training failed.")
