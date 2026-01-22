@@ -9,13 +9,13 @@ import pennylane as qml
 torch.manual_seed(42)
 np.random.seed(42)
 
-def load_data(data_path="CSI_channel_30km.npy"):
+def load_data(data_path="/Users/luxian/DataSpace/csi_cmri/CSI_channel_30km.npy"):
     """安全地加载数据文件或生成模拟数据"""
     possible_paths = [
         data_path,
-        f"./{data_path}",
-        f"../DataSpace/csi_cmri/{data_path}",
-        f"../../DataSpace/csi_cmri/{data_path}",
+        "./CSI_channel_30km.npy",
+        f"../DataSpace/csi_cmri/CSI_channel_30km.npy",
+        f"../../DataSpace/csi_cmri/CSI_channel_30km.npy",
     ]
     
     for path in possible_paths:
