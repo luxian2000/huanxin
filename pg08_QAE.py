@@ -696,8 +696,8 @@ if __name__ == "__main__":
     latest_decoder_path = "model_parameters/final_qae_decoder_weights.pt"
     
     if os.path.exists(latest_encoder_path) and os.path.exists(latest_decoder_path):
-        print("检测到已有的训练权重，将使用动态学习率继续训练...")
-        weights, history = train_with_dynamic_lr(starting_epoch=40, additional_epochs=10)
+        print("检测到已有的训练权重，将从最新权重继续训练...")
+        weights, history = continue_training_from_saved_weights(starting_epoch=50, additional_epochs=10)
     else:
         print("未检测到已有的训练权重，将从头开始训练...")
         weights, history = train_batch_version_extended()
