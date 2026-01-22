@@ -697,7 +697,7 @@ if __name__ == "__main__":
     
     if os.path.exists(latest_encoder_path) and os.path.exists(latest_decoder_path):
         print("检测到已有的训练权重，将从最新权重继续训练...")
-        weights, history = continue_training_from_saved_weights(starting_epoch=50, additional_epochs=10)
+        weights, history = continue_training_from_saved_weights(starting_epoch=60, additional_epochs=10)
     else:
         print("未检测到已有的训练权重，将从头开始训练...")
         weights, history = train_batch_version_extended()
