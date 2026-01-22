@@ -682,6 +682,156 @@ def train_with_dynamic_lr(starting_epoch=40, additional_epochs=10):
         return None, None
 
 
+def continue_training_with_new_samples(starting_epoch=70, additional_epochs=30, use_random_samples=True):
+    """
+    使用新样本继续训练
+    starting_epoch: 开始继续训练的epoch编号
+    additional_epochs: 额外训练的epoch数
+    use_random_samples: 是否使用随机样本
+    """
+    try:
+        # 加载最新的权重
+        latest_encoder_path = f"model_parameters/qae_encoder_epoch_{starting_epoch-1}.pt"
+        latest_decoder_path = f"model_parameters/qae_decoder_epoch_{starting_epoch-1}.pt"
+        
+        if not (os.path.exists(latest_encoder_path) and os.path.exists(latest_decoder_path)):
+            print(f"无法找到起始权重文件，无法继续训练")
+            return None, None
+            
+        enc_params = torch.load(latest_encoder_path, map_location=torch.device('cpu'))
+        dec_params = torch.load(latest_decoder_path, map_location=torch.device('cpu'))
+        
+        # 确保参数设置为可训练
+        enc_params.requires_grad_(True)
+        dec_params.requires_grad_(True)
+        
+        print(f"从第{starting_epoch}个epoch开始使用新样本训练，额外训练{additional_epochs}个epoch")
+        
+        n_samples = 1000  # 使用相同数量的样本
+        if use_random_samples:
+            # 随机选择新的1000个样本
+            indices = np.random.choice(len(train_data), n_samples, replace=False)
+            samples = [train_data[i] for i in indices]
+            print(f"使用了新的随机样本子集进行训练")
+        else:
+            # 使用固定的前1000个样本
+            samples = train_data[:n_samples]
+
+        # 使用与之前相同的优化器设置
+        opt = torch.optim.Adam([enc_params, dec_params], lr=0.005)  # 保持相同的学习率
+        batch_size = 100  # 保持相同的批量大小
+
+        # 加载之前的训练历史
+        prev_history_path = "model_parameters/qae_training_history.pt"
+        if os.path.exists(prev_history_path):
+            prev_history = torch.load(prev_history_path, weights_only=False)
+            training_history = prev_history
+            # 清空当前epoch之后的记录，因为我们将在后面追加新记录
+            training_history["epoch_losses"] = training_history["epoch_losses"][:starting_epoch]
+            training_history["val_fidelity"] = training_history["val_fidelity"][:starting_epoch]
+            training_history["weights_history"] = training_history["weights_history"][:starting_epoch]
+        else:
+            # 如果没有找到之前的训练历史，则创建新的
+            training_history = {
+                "epoch_losses": [],
+                "val_fidelity": [],
+                "batch_losses": [],
+                "weights_history": [],
+                "data_split_info": {
+                    "train_size": len(train_data),
+                    "val_size": len(val_data),
+                    "test_size": len(test_data),
+                    "actual_train_used": n_samples,
+                },
+            }
+
+        print(f"Starting continued QAE training with new samples from epoch {starting_epoch}...")
+        start_time = time.time()
+
+        for epoch in range(starting_epoch, starting_epoch + additional_epochs):
+            # 每个epoch都使用新的随机样本
+            if use_random_samples:
+                indices = np.random.choice(len(train_data), n_samples, replace=False)
+                samples = [train_data[i] for i in indices]
+            
+            epoch_loss = 0.0
+            batch_count = 0
+
+            for i in range(0, n_samples, batch_size):
+                batch = samples[i : i + batch_size]
+
+                # 直接计算梯度而不是使用闭包
+                opt.zero_grad()
+                fidelities = []
+                for img_params in batch:
+                    if isinstance(img_params, np.ndarray):
+                        img_params = torch.from_numpy(img_params).float()
+                    fid = qae_circuit(img_params, enc_params, dec_params)
+                    fidelities.append(fid)
+                fidelities = torch.stack(fidelities)
+                loss = 1.0 - torch.mean(fidelities)
+                loss.backward()
+
+                pre_enc = enc_params.clone().detach()
+                pre_dec = dec_params.clone().detach()
+                
+                # 更新参数
+                opt.step()
+                
+                current_loss = loss.item()
+                epoch_loss += current_loss
+                batch_count += 1
+
+                training_history["batch_losses"].append(
+                    {
+                        "epoch": epoch,
+                        "batch": i // batch_size,
+                        "loss": float(current_loss),
+                        "enc_norm": float(torch.norm(pre_enc)),
+                        "dec_norm": float(torch.norm(pre_dec)),
+                    }
+                )
+
+                if (i // batch_size) % 3 == 0:  # 调整打印频率
+                    print(f"Epoch {epoch}, Batch {i//batch_size}: loss = {current_loss:.6f}")
+
+            if batch_count > 0:
+                avg_epoch_loss = epoch_loss / batch_count
+                val_fid = validate_model(enc_params, dec_params, val_samples=500)
+
+                training_history["epoch_losses"].append({"epoch": epoch, "avg_loss": float(avg_epoch_loss)})
+                training_history["val_fidelity"].append({"epoch": epoch, "val_fidelity": float(val_fid)})
+
+                enc_snapshot = enc_params.clone().detach()
+                dec_snapshot = dec_params.clone().detach()
+                training_history["weights_history"].append(
+                    {
+                        "encoder": enc_snapshot.numpy(),
+                        "decoder": dec_snapshot.numpy(),
+                    }
+                )
+                torch.save(enc_snapshot, f"model_parameters/qae_encoder_epoch_{epoch}.pt")
+                torch.save(dec_snapshot, f"model_parameters/qae_decoder_epoch_{epoch}.pt")
+                print(
+                    f"Epoch {epoch} completed: Train Loss = {avg_epoch_loss:.6f}, Val Fidelity = {val_fid:.6f}"
+                )
+                print("-" * 50)
+
+        total_time = time.time() - start_time
+        print(f"Continued training with new samples completed in {total_time:.2f} seconds!")
+        torch.save(enc_params, "model_parameters/final_qae_encoder_weights.pt")
+        torch.save(dec_params, "model_parameters/final_qae_decoder_weights.pt")
+        torch.save(training_history, "model_parameters/qae_training_history.pt")
+        print("Final QAE weights and updated training history saved!")
+        return (enc_params, dec_params), training_history
+
+    except Exception as e:
+        print(f"Error in continued batch training with new samples: {e}")
+        import traceback
+        traceback.print_exc()
+        return None, None
+
+
 if __name__ == "__main__":
     print("Starting quantum-classical hybrid model with quantum autoencoder...")
     print("=" * 60)
@@ -696,8 +846,8 @@ if __name__ == "__main__":
     latest_decoder_path = "model_parameters/final_qae_decoder_weights.pt"
     
     if os.path.exists(latest_encoder_path) and os.path.exists(latest_decoder_path):
-        print("检测到已有的训练权重，将从最新权重继续训练...")
-        weights, history = continue_training_from_saved_weights(starting_epoch=60, additional_epochs=10)
+        print("检测到已有的训练权重，将使用新样本继续训练...")
+        weights, history = continue_training_with_new_samples(starting_epoch=70, additional_epochs=30, use_random_samples=True)
     else:
         print("未检测到已有的训练权重，将从头开始训练...")
         weights, history = train_batch_version_extended()
