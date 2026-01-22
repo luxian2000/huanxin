@@ -16,5 +16,11 @@
     "python.linting.flake8Enabled": true,
     "python.linting.flake8Path": "flake8",
     "python.linting.pylintEnabled": true,
-    "python.linting.pylintPath": "pylint"
+    "python.linting.pylintPath": "pylint",
+    "chat.tools.terminal.autoApprove": {
+        "/^python analyze_training\\.py$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
 }
