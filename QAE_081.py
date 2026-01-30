@@ -593,8 +593,8 @@ def main():
     
     if os.path.exists(best_encoder_path) and os.path.exists(best_decoder_path):
         print("检测到已有的训练权重，将使用延续训练模式...")
-        print("在第0个epoch基础上再训练9个epoch")
-        weights = continue_training_from_saved_weights(starting_epoch=1, additional_epochs=9)
+        print("在现有10个epoch基础上再训练10个epoch")
+        weights = continue_training_from_saved_weights(starting_epoch=10, additional_epochs=10)
     else:
         print("未检测到已有的训练权重，将从头开始训练...")
         weights, history = train_improved()
