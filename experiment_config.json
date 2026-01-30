@@ -1,0 +1,20 @@
+{
+  "model_name": "QAE_Improved",
+  "input_dim": 2560,
+  "hidden_dims": [
+    1024,
+    512
+  ],
+  "latent_dim": 256,
+  "n_qubits": 8,
+  "n_layers": 6,
+  "n_epochs": 300,
+  "batch_size": 200,
+  "learning_rate": 0.001,
+  "train_samples": 5000,
+  "val_samples": 1000,
+  "test_samples": 1000,
+  "regularization_weight": 0.01,
+  "gradient_clip_norm": 5.0,
+  "early_stopping_patience": 30
+}
