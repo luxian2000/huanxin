@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import pennylane as qml
 import os
-from pg08_QAE import qae_circuit, validate_model, load_data  # 导入数据加载函数
+from QAE_08 import qae_circuit, validate_model, load_data  # 导入数据加载函数
 
 # 加载训练好的模型参数
 try:
