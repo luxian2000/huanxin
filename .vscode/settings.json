@@ -21,6 +21,10 @@
         "/^python analyze_training\\.py$/": {
             "approve": true,
             "matchCommandLine": true
+        },
+        "/^/opt/anaconda3/envs/penny/bin/python - <<'PY'\nimport torch, os\npath = '/Users/luxian/GitSpace/huanxin/QAE_08/qae_training_history\\.pt'\nobj = torch\\.load\\(path, map_location='cpu', weights_only=False\\)\nprint\\(type\\(obj\\)\\)\nprint\\(obj\\.keys\\(\\)\\)\nprint\\('epoch_losses', len\\(obj\\.get\\('epoch_losses', \\[\\]\\)\\)\\)\nprint\\('val_fidelity', len\\(obj\\.get\\('val_fidelity', \\[\\]\\)\\)\\)\nprint\\('batch_losses', len\\(obj\\.get\\('batch_losses', \\[\\]\\)\\)\\)\n# show last few\nprint\\('last epoch_losses', obj\\['epoch_losses'\\]\\[-3:\\]\\)\nprint\\('last val_fidelity', obj\\['val_fidelity'\\]\\[-3:\\]\\)\nprint\\('data_split_info', obj\\.get\\('data_split_info'\\)\\)\nPY$/": {
+            "approve": true,
+            "matchCommandLine": true
         }
     }
 }
