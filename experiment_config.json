@@ -1,20 +1,16 @@
 {
-  "model_name": "QAE_Improved",
+  "model_name": "QAE082_Hybrid",
   "input_dim": 2560,
-  "hidden_dims": [
-    1024,
-    512
-  ],
-  "latent_dim": 256,
-  "n_qubits": 8,
-  "n_layers": 6,
-  "n_epochs": 300,
-  "batch_size": 200,
+  "compressed_dim": 512,
+  "output_dim": 2560,
+  "n_qubits": 9,
+  "n_layers": 4,
+  "n_epochs": 100,
+  "batch_size": 100,
   "learning_rate": 0.001,
-  "train_samples": 5000,
-  "val_samples": 1000,
-  "test_samples": 1000,
+  "train_samples": 2000,
+  "val_samples": 500,
+  "test_samples": 500,
   "regularization_weight": 0.01,
-  "gradient_clip_norm": 5.0,
-  "early_stopping_patience": 30
+  "gradient_clip_norm": 5.0
 }
