@@ -1,14 +1,14 @@
 """
-QAE083: 混合经典-量子编码解码神经网络 (使用CsiNet编码器，encoded_dim=256)
+QAE083: 混合经典-量子编码解码神经网络 (使用CsiNet编码器，encoded_dim=128)
 
 网络架构：
-1. 经典编码器：使用CsiNet卷积编码器将(2,32,32)图像压缩到256维
-2. 量子态映射：将256维经典向量映射为量子态（幅度嵌入）
+1. 经典编码器：使用CsiNet卷积编码器将(2,32,32)图像压缩到128维
+2. 量子态映射：将128维经典向量映射为量子态（幅度嵌入）
 3. 量子解码器：使用参数化量子线路解码量子态，恢复到2048维
 4. 经典解码器：将2048维向量重塑为(2,32,32)图像格式
 
 数据流：
-输入(2,32,32) -> CsiNet编码器 -> 256维 -> 量子态 -> 量子解码器 -> 2048维 -> (2,32,32)
+输入(2,32,32) -> CsiNet编码器 -> 128维 -> 量子态 -> 量子解码器 -> 2048维 -> (2,32,32)
 """
 
 import os
@@ -33,7 +33,7 @@ img_height = 32
 img_width = 32
 img_channels = 2
 img_total = img_height * img_width * img_channels  # 2048
-encoded_dim = 256  # 压缩率1/8
+encoded_dim = 128  # 压缩率1/16
 
 def load_csinet_data():
     """加载CsiNet格式的.mat数据文件并reshape为图像格式"""
@@ -67,9 +67,9 @@ def load_csinet_data():
 # ============================================================================
 
 class CsiNetEncoder(nn.Module):
-    """CsiNet编码器：将(2,32,32)图像压缩到256维向量"""
+    """CsiNet编码器：将(2,32,32)图像压缩到128维向量"""
     
-    def __init__(self, encoded_dim=256):  # 修改：默认参数改为256
+    def __init__(self, encoded_dim=128):  # 修改：默认参数改为128
         super(CsiNetEncoder, self).__init__()
         self.encoded_dim = encoded_dim
         
@@ -149,7 +149,7 @@ def pad_to_qubits(vec, n_qubits):
 # ============================================================================
 
 # Quantum device
-# 使用11个量子比特：8个用于编码256维数据，3个用于ansatz操作，全部11个用于测量得到2048维输出
+# 使用11个量子比特：7个用于编码128维数据，4个用于ansatz操作，全部11个用于测量得到2048维输出
 DEV = qml.device("lightning.qubit", wires=11)  
 
 @qml.qnode(DEV, interface="torch")
@@ -158,24 +158,24 @@ def quantum_decoder_circuit(encoded_vec, dec_params):
     量子自编码器解码器电路
     
     Args:
-        encoded_vec: 经典编码器输出的256维向量
+        encoded_vec: 经典编码器输出的128维向量
         dec_params: 量子解码器参数
         
     Returns:
         2048维概率分布（对应11个量子比特在计算基下的测量概率）
     """
-    # 1. 将经典编码向量嵌入为量子态（使用前8个量子比特）
-    encoded_padded = pad_to_qubits(encoded_vec, 8)
+    # 1. 将经典编码向量嵌入为量子态（使用前7个量子比特）
+    encoded_padded = pad_to_qubits(encoded_vec, 7)
     encoded_normalized = normalize_for_amplitude_embedding(encoded_padded)
     
     # 额外确保归一化（双重保险）
     encoded_normalized = encoded_normalized / (torch.norm(encoded_normalized, p=2) + 1e-10)
     
-    # 在前8个量子比特上进行振幅编码
-    qml.AmplitudeEmbedding(encoded_normalized, wires=range(8), 
+    # 在前7个量子比特上进行振幅编码
+    qml.AmplitudeEmbedding(encoded_normalized, wires=range(7), 
                           pad_with=0.0, normalize=True)
     
-    # 后3个量子比特初始化为|0>态（默认已是|0>，无需额外操作）
+    # 后4个量子比特初始化为|0>态（默认已是|0>，无需额外操作）
     
     # 2. 应用参数化量子解码层（作用于全部11个量子比特）
     qml.StronglyEntanglingLayers(weights=dec_params, wires=range(11))
@@ -191,8 +191,8 @@ class HybridCsiNetQuantumAutoencoder(nn.Module):
     完整的混合CsiNet-量子自编码器
     
     流程：
-    1. CsiNet编码器压缩图像到256维
-    2. 量子态嵌入（8个量子比特）和量子解码器变换（11个量子比特）
+    1. CsiNet编码器压缩图像到128维
+    2. 量子态嵌入（7个量子比特）和量子解码器变换（11个量子比特）
     3. 计算基测量得到2048维概率分布（直接作为输出）
     """
     def __init__(self, csinet_encoder, dec_params):
@@ -209,13 +209,13 @@ class HybridCsiNetQuantumAutoencoder(nn.Module):
         batch_size = x.shape[0]
         
         # 1. CsiNet编码器处理
-        encoded_batch = self.csinet_encoder(x)  # (batch_size, 256)
+        encoded_batch = self.csinet_encoder(x)  # (batch_size, 128)
         
         # 2. 量子解码（逐个样本处理）
         outputs = []
         for i in range(batch_size):
             # 获取单个编码向量
-            encoded_vec = encoded_batch[i]  # (256,)
+            encoded_vec = encoded_batch[i]  # (128,)
             
             # 量子解码（返回2048个概率值）
             quantum_probs = quantum_decoder_circuit(encoded_vec, self.dec_params)  # (2048,)
@@ -355,7 +355,7 @@ def train_hybrid_model():
         print("=" * 80)
         
         # 初始化组件
-        csinet_encoder = CsiNetEncoder(encoded_dim=256)
+        csinet_encoder = CsiNetEncoder(encoded_dim=128)
         print("📋 CsiNet编码器结构:")
         print(csinet_encoder)
         
@@ -364,7 +364,7 @@ def train_hybrid_model():
         dec_params = nn.Parameter(torch.rand(dec_shape) * 2 * 3.14159 - 3.14159)  # 初始化为[-π, π]范围
         print(f"\n⚛️  量子解码器配置:")
         print(f"  • 参数形状: {dec_shape}")
-        print(f"  • 量子比特: 11 (8个用于256维编码，11个用于ansatz和测量)")
+        print(f"  • 量子比特: 11 (7个用于128维编码，11个用于ansatz和测量)")
         
         # 保存初始参数
         save_initial_parameters(csinet_encoder, dec_params)
@@ -378,9 +378,9 @@ def train_hybrid_model():
         classical_optimizer = torch.optim.Adam(csinet_encoder.parameters(), lr=0.001)
         
         # 训练参数
-        n_epochs = 5  # 恢复到5个epoch
-        batch_size = 10  # 调整为10，每个batch处理10个样本
-        n_samples = 500  # 保持500个样本，每个epoch有50个batch (500/10=50)
+        n_epochs = 10  # 改为10个epoch
+        batch_size = 50  # 改为50，每个batch处理50个样本
+        n_samples = 500  # 保持500个样本，每个epoch有10个batch (500/50=10)
         samples = torch.from_numpy(train_data[:n_samples]).float()
         
         # 训练历史
@@ -395,12 +395,12 @@ def train_hybrid_model():
                 "actual_train_used": n_samples,
             },
             "network_config": {
-                "encoded_dim": 256,
-                "quantum_encoding_qubits": 8,
+                "encoded_dim": 128,
+                "quantum_encoding_qubits": 7,
                 "quantum_ansatz_qubits": 11,
                 "quantum_layers": 4,
                 "output_dim": 2048,
-                "compression_ratio": "1/8"
+                "compression_ratio": "1/16"
             }
         }
         
@@ -411,8 +411,8 @@ def train_hybrid_model():
             writer.writerow(['epoch', 'batch', 'loss', 'dec_params_norm'])
         
         print(f"\n🎯 训练配置概览:")
-        print(f"  • 编码维度: 256 (压缩率 1/8)")
-        print(f"  • 量子比特: 11 (8编码 + 3辅助)")
+        print(f"  • 编码维度: 128 (压缩率 1/16)")
+        print(f"  • 量子比特: 11 (7编码 + 4辅助)")
         print(f"  • 量子层数: 4")
         print(f"  • 输出维度: 2048 (概率分布)")
         print(f"  • 总epochs: {n_epochs}")
@@ -572,6 +572,235 @@ def train_hybrid_model():
         traceback.print_exc()
         return None, None
 
+def continue_training_from_saved_weights(starting_epoch=10, additional_epochs=10):
+    """
+    从保存的权重继续训练QAE083模型
+    starting_epoch: 开始继续训练的epoch编号
+    additional_epochs: 额外训练的epoch数
+    """
+    try:
+        print("\n" + "=" * 80)
+        print(f"🔄 从第{starting_epoch}个epoch开始继续训练QAE083混合量子自编码器")
+        print(f"📈 额外训练 {additional_epochs} 个epoch")
+        print("=" * 80)
+        
+        # 加载最新的权重
+        latest_encoder_path = f"{OUTPUT_DIR}/csinet_encoder_epoch_{starting_epoch-1}.pt"
+        latest_decoder_path = f"{OUTPUT_DIR}/quantum_decoder_epoch_{starting_epoch-1}.pt"
+        
+        if not (os.path.exists(latest_encoder_path) and os.path.exists(latest_decoder_path)):
+            print(f"❌ 无法找到起始权重文件: {latest_encoder_path} 或 {latest_decoder_path}")
+            print("请检查文件是否存在或调整starting_epoch参数")
+            return None, None
+            
+        # 加载权重
+        encoder_state_dict = torch.load(latest_encoder_path, map_location=torch.device('cpu'))
+        dec_params = torch.load(latest_decoder_path, map_location=torch.device('cpu'))
+        
+        # 初始化组件
+        csinet_encoder = CsiNetEncoder(encoded_dim=128)
+        csinet_encoder.load_state_dict(encoder_state_dict)
+        print("✅ 已加载CsiNet编码器权重")
+        
+        # 确保参数设置为可训练
+        dec_params.requires_grad_(True)
+        for param in csinet_encoder.parameters():
+            param.requires_grad_(True)
+        
+        # 创建混合模型
+        hybrid_model = HybridCsiNetQuantumAutoencoder(csinet_encoder, dec_params)
+        print("✅ 混合模型创建完成")
+        
+        # 优化器 (使用与原始训练相同的设置)
+        quantum_optimizer = torch.optim.Adam([dec_params], lr=0.001)
+        classical_optimizer = torch.optim.Adam(csinet_encoder.parameters(), lr=0.001)
+        
+        # 训练参数 (与原始训练保持一致)
+        batch_size = 50
+        n_samples = 500
+        samples = torch.from_numpy(train_data[:n_samples]).float()
+        
+        # 加载之前的训练历史
+        prev_history_path = f"{OUTPUT_DIR}/training_history_epoch_{starting_epoch-1}.pt"
+        if os.path.exists(prev_history_path):
+            training_history = torch.load(prev_history_path, weights_only=False)
+            print("✅ 已加载之前的训练历史")
+        else:
+            print("⚠️  未找到之前的训练历史，将创建新的历史记录")
+            training_history = {
+                "epoch_losses": [],
+                "val_mse": [],
+                "batch_losses": [],
+                "data_split_info": {
+                    "train_size": len(train_data),
+                    "val_size": len(val_data),
+                    "test_size": len(test_data),
+                    "actual_train_used": n_samples,
+                },
+                "network_config": {
+                    "encoded_dim": 128,
+                    "quantum_encoding_qubits": 7,
+                    "quantum_ansatz_qubits": 11,
+                    "quantum_layers": 4,
+                    "output_dim": 2048,
+                    "compression_ratio": "1/16"
+                }
+            }
+        
+        # CSV文件记录 (追加模式)
+        csv_file = f"{OUTPUT_DIR}/hybrid_batch_losses.csv"
+        csv_mode = 'a' if os.path.exists(csv_file) else 'w'
+        with open(csv_file, csv_mode, newline='') as f:
+            writer = csv.writer(f)
+            if csv_mode == 'w':
+                writer.writerow(['epoch', 'batch', 'loss', 'dec_params_norm'])
+        
+        print(f"\n🎯 继续训练配置:")
+        print(f"  • 从第 {starting_epoch} epoch开始")
+        print(f"  • 额外训练 {additional_epochs} epochs")
+        print(f"  • 编码维度: 128 (压缩率 1/16)")
+        print(f"  • 量子比特: 11 (7编码 + 4辅助)")
+        print(f"  • 训练样本: {n_samples}")
+        
+        start_time = time.time()
+        print(f"\n⏰ 继续训练开始时间: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print("=" * 80)
+        
+        # 继续训练循环
+        for epoch in range(starting_epoch, starting_epoch + additional_epochs):
+            hybrid_model.train()
+            epoch_loss = 0.0
+            batch_count = 0
+            
+            # 随机打乱训练数据
+            indices = torch.randperm(n_samples)
+            samples_shuffled = samples[indices]
+            
+            epoch_start_time = time.time()
+            batch_losses = []
+            
+            for i in range(0, n_samples, batch_size):
+                batch = samples_shuffled[i:i + batch_size]
+                actual_batch_size = batch.shape[0]
+                
+                if actual_batch_size < 1:
+                    continue
+                    
+                # 清零梯度
+                classical_optimizer.zero_grad()
+                quantum_optimizer.zero_grad()
+                
+                # 前向传播
+                outputs = hybrid_model(batch)
+                targets = prepare_target_distribution(batch)
+                loss = compute_probability_loss(outputs, targets)
+                
+                # 反向传播
+                loss.backward()
+                
+                # 记录参数范数
+                dec_params_norm = torch.norm(dec_params).item()
+                
+                # 更新参数
+                classical_optimizer.step()
+                quantum_optimizer.step()
+                
+                current_loss = loss.item()
+                epoch_loss += current_loss * actual_batch_size
+                batch_count += actual_batch_size
+                batch_losses.append(current_loss)
+                
+                # 记录batch loss
+                training_history["batch_losses"].append({
+                    "epoch": epoch,
+                    "batch": i // batch_size,
+                    "loss": float(current_loss),
+                    "dec_params_norm": float(dec_params_norm)
+                })
+                
+                # 写入CSV
+                with open(csv_file, 'a', newline='') as f:
+                    csv.writer(f).writerow([epoch, i // batch_size, current_loss, dec_params_norm])
+                
+                if (i // batch_size) % 10 == 0:
+                    print(f"  Batch {(i//batch_size)+1:2d}/{(n_samples//batch_size):2d}: "
+                          f"Loss = {current_loss:.8f}")
+            
+            if batch_count > 0:
+                avg_epoch_loss = epoch_loss / batch_count
+                epoch_time = time.time() - epoch_start_time
+                val_mse = validate_model(hybrid_model, val_data, val_samples=200)
+                
+                training_history["epoch_losses"].append({"epoch": epoch, "avg_loss": float(avg_epoch_loss)})
+                training_history["val_mse"].append({"epoch": epoch, "val_mse": float(val_mse)})
+                
+                # 保存epoch权重
+                torch.save(csinet_encoder.state_dict(), 
+                          f"{OUTPUT_DIR}/csinet_encoder_epoch_{epoch}.pt")
+                torch.save(dec_params.clone().detach(), 
+                          f"{OUTPUT_DIR}/quantum_decoder_epoch_{epoch}.pt")
+                
+                # 保存训练历史
+                torch.save(training_history, 
+                          f"{OUTPUT_DIR}/training_history_epoch_{epoch}.pt")
+                
+                # 打印epoch信息
+                print("\n" + "=" * 80)
+                print(f"🎉 EPOCH {epoch} 训练完成!")
+                print("=" * 80)
+                
+                print(f"📊 训练统计:")
+                print(f"  • 平均训练损失: {avg_epoch_loss:.8f}")
+                print(f"  • 验证集KL散度: {val_mse:.8f}")
+                print(f"  • 处理样本数: {batch_count}")
+                print(f"  • Epoch耗时: {format_time(epoch_time)}")
+                
+                print(f"\n📉 损失分析:")
+                print(f"  • 最小batch损失: {min(batch_losses):.8f}")
+                print(f"  • 最大batch损失: {max(batch_losses):.8f}")
+                print(f"  • 损失改善率: {((batch_losses[0] - batch_losses[-1])/batch_losses[0]*100):.2f}%")
+                
+                print(f"\n💾 保存状态:")
+                print(f"  • 编码器权重: csinet_encoder_epoch_{epoch}.pt")
+                print(f"  • 量子参数: quantum_decoder_epoch_{epoch}.pt")
+                
+                # 进度条
+                total_epochs = starting_epoch + additional_epochs
+                progress = (epoch + 1) / total_epochs * 100
+                bar_length = 30
+                filled_length = int(bar_length * progress // 100)
+                bar = '█' * filled_length + '-' * (bar_length - filled_length)
+                print(f"\n🔄 总体进度: |{bar}| {progress:.1f}% ({epoch + 1}/{total_epochs})")
+                print("=" * 80)
+        
+        total_time = time.time() - start_time
+        print(f"\n🏆 继续训练圆满完成!")
+        print("=" * 80)
+        print(f"⏱️  总继续训练时间: {format_time(total_time)}")
+        print(f"📅 训练结束时间: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        # 保存最终模型
+        torch.save(csinet_encoder.state_dict(), 
+                  f"{OUTPUT_DIR}/final_csinet_encoder_continued.pt")
+        torch.save(dec_params, 
+                  f"{OUTPUT_DIR}/final_quantum_decoder_weights_continued.pt")
+        torch.save(training_history, 
+                  f"{OUTPUT_DIR}/training_history_continued.pt")
+        
+        print(f"\n💾 继续训练最终模型保存:")
+        print(f"  • 最终编码器: final_csinet_encoder_continued.pt")
+        print(f"  • 最终量子参数: final_quantum_decoder_weights_continued.pt")
+        print(f"  • 完整训练历史: training_history_continued.pt")
+        print("=" * 80)
+        
+        return hybrid_model, training_history
+        
+    except Exception as e:
+        print(f"继续训练过程错误: {e}")
+        import traceback
+        traceback.print_exc()
+        return None, None
+
 def test_trained_model(model, test_data, test_samples=500):
     """测试训练好的模型"""
     print("\n" + "=" * 70)
@@ -611,7 +840,7 @@ def test_trained_model(model, test_data, test_samples=500):
             "test_jsd_divergence": float(jsd_loss),
             "test_hellinger_distance": float(hellinger_loss),
             "n_samples": len(subset),
-            "encoded_dim": 256,
+            "encoded_dim": 128,
             "loss_function_used": "cross_entropy"  # 记录使用的损失函数
         }
         torch.save(test_results, f"{OUTPUT_DIR}/test_results.pt")
@@ -630,7 +859,7 @@ def test_trained_model(model, test_data, test_samples=500):
 
 if __name__ == "__main__":
     print("=" * 80)
-    print("🔬 QAE083: 混合CsiNet-量子编码解码神经网络 (encoded_dim=256)")
+    print("🔬 QAE083: 混合CsiNet-量子编码解码神经网络 (encoded_dim=128)")
     print("=" * 80)
     
     # Data loading
@@ -643,9 +872,9 @@ if __name__ == "__main__":
     print(f"  • 输入形状: {train_data.shape[1:]}")
     print(f"  • 数据范围: [{train_data.min():.4f}, {train_data.max():.4f}]")
     
-    print(f"\n🏗️  网络架构 (encoded_dim=256):")
-    print("  1. CsiNet编码器: (2,32,32) → 256维 (压缩率1/8)")
-    print("  2. 量子态嵌入: 256维向量映射为量子态 (8量子比特振幅编码)")
+    print(f"\n🏗️  网络架构 (encoded_dim=128):")
+    print("  1. CsiNet编码器: (2,32,32) → 128维 (压缩率1/16)")
+    print("  2. 量子态嵌入: 128维向量映射为量子态 (7量子比特振幅编码)")
     print("  3. 量子解码器: 11量子比特参数化量子线路 (StronglyEntanglingLayers)")
     print("  4. 计算基测量: 直接得到2048维概率分布")
     print("  5. 损失函数: 输出概率分布 vs 输入归一化概率分布的KL散度 (可选: mse, cross_entropy, jsd, hellinger)")
@@ -661,9 +890,24 @@ if __name__ == "__main__":
         test_loss = test_trained_model(trained_model, test_data, test_samples=500)
         
         print("\n" + "=" * 70)
-        print("训练和测试完成！")
+        print("初始训练完成！现在开始继续训练...")
         print("=" * 70)
-        print(f"所有结果保存在目录: {OUTPUT_DIR}/")
-        print(f"配置详情: 概率分布对概率分布训练, 8比特编码+11比特ansatz")
+        
+        # 继续训练10个epoch
+        continued_model, continued_history = continue_training_from_saved_weights(
+            starting_epoch=10, additional_epochs=10
+        )
+        
+        if continued_model is not None:
+            # 测试继续训练后的模型
+            final_test_loss = test_trained_model(continued_model, test_data, test_samples=500)
+            
+            print("\n" + "=" * 70)
+            print("训练和测试完成！")
+            print("=" * 70)
+            print(f"所有结果保存在目录: {OUTPUT_DIR}/")
+            print(f"配置详情: 概率分布对概率分布训练, 7比特编码+11比特ansatz")
+        else:
+            print("\n继续训练失败！")
     else:
-        print("\n训练失败！")
+        print("\n初始训练失败！")
