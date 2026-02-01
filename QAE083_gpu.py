@@ -386,10 +386,18 @@ def train_hybrid_model():
         classical_optimizer = torch.optim.Adam(csinet_encoder.parameters(), lr=0.001)
 
         # 训练参数
-        n_epochs = 10  # 训练10个epoch
+        n_epochs = 20  # 总共训练20个epoch (继续训练10个epoch)
         batch_size = 50  # 每个batch处理50个样本
         n_samples = 500  # 保持500个样本，每个epoch有10个batch (500/50=10)
         samples = torch.from_numpy(train_data[:n_samples]).float().to(device)
+
+        # 加载之前训练的模型权重 (从epoch 9开始继续训练)
+        try:
+            csinet_encoder.load_state_dict(torch.load(f"{OUTPUT_DIR}/csinet_encoder_epoch_9.pt"))
+            dec_params.data = torch.load(f"{OUTPUT_DIR}/quantum_decoder_epoch_9.pt")
+            print("✅ 已加载epoch 9的模型权重作为起点")
+        except FileNotFoundError:
+            print("⚠️  未找到epoch 9的权重文件，将从头开始训练")
 
         # 训练历史
         training_history = {
@@ -429,10 +437,10 @@ def train_hybrid_model():
         print(f"  • 设备: {device}")
 
         start_time = time.time()
-        print(f"\n⏰ 训练开始时间: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"\n⏰ 继续训练开始时间: {time.strftime('%Y-%m-%d %H:%M:%S')}")
         print("=" * 80)
 
-        for epoch in range(n_epochs):
+        for epoch in range(10, n_epochs):  # 从epoch 10开始训练到epoch 19
             hybrid_model.train()
             epoch_loss = 0.0
             batch_count = 0
