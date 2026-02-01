@@ -572,17 +572,22 @@ def train_hybrid_model():
         traceback.print_exc()
         return None, None
 
-def continue_training_from_saved_weights(starting_epoch=10, additional_epochs=10):
+def continue_training_from_saved_weights(starting_epoch=10, additional_epochs=10, train_data=None, val_data=None):
     """
     从保存的权重继续训练QAE083模型
     starting_epoch: 开始继续训练的epoch编号
     additional_epochs: 额外训练的epoch数
+    train_data, val_data: 如果为None，会自动加载
     """
     try:
         print("\n" + "=" * 80)
         print(f"🔄 从第{starting_epoch}个epoch开始继续训练QAE083混合量子自编码器")
         print(f"📈 额外训练 {additional_epochs} 个epoch")
         print("=" * 80)
+        
+        # 加载数据（如果没有提供）
+        if train_data is None or val_data is None:
+            train_data, val_data, _ = load_csinet_data()
         
         # 加载最新的权重
         latest_encoder_path = f"{OUTPUT_DIR}/csinet_encoder_epoch_{starting_epoch-1}.pt"
@@ -880,34 +885,21 @@ if __name__ == "__main__":
     print("  5. 损失函数: 输出概率分布 vs 输入归一化概率分布的KL散度 (可选: mse, cross_entropy, jsd, hellinger)")
     
     print("=" * 80)
-    print("🚀 开始训练流程...")
+    print("🚀 开始继续训练流程...")
     
-    # 训练模型
-    trained_model, history = train_hybrid_model()
+    # 直接从第10个epoch开始继续训练10个epoch
+    continued_model, continued_history = continue_training_from_saved_weights(
+        starting_epoch=10, additional_epochs=10
+    )
     
-    if trained_model is not None:
-        # 测试模型
-        test_loss = test_trained_model(trained_model, test_data, test_samples=500)
+    if continued_model is not None:
+        # 测试继续训练后的模型
+        final_test_loss = test_trained_model(continued_model, test_data, test_samples=500)
         
         print("\n" + "=" * 70)
-        print("初始训练完成！现在开始继续训练...")
+        print("继续训练和测试完成！")
         print("=" * 70)
-        
-        # 继续训练10个epoch
-        continued_model, continued_history = continue_training_from_saved_weights(
-            starting_epoch=10, additional_epochs=10
-        )
-        
-        if continued_model is not None:
-            # 测试继续训练后的模型
-            final_test_loss = test_trained_model(continued_model, test_data, test_samples=500)
-            
-            print("\n" + "=" * 70)
-            print("训练和测试完成！")
-            print("=" * 70)
-            print(f"所有结果保存在目录: {OUTPUT_DIR}/")
-            print(f"配置详情: 概率分布对概率分布训练, 7比特编码+11比特ansatz")
-        else:
-            print("\n继续训练失败！")
+        print(f"所有结果保存在目录: {OUTPUT_DIR}/")
+        print(f"配置详情: 概率分布对概率分布训练, 7比特编码+11比特ansatz")
     else:
-        print("\n初始训练失败！")
+        print("\n继续训练失败！")
